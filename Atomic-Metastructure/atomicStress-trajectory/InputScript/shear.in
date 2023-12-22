@@ -1,0 +1,70 @@
+units           lj
+dimension       3
+processors      * * *
+boundary        p p p
+atom_style      sphere
+timestep        1e-2
+
+box             tilt large
+read_data       relax0K.dat
+change_box      all triclinic
+
+# Choose potential
+include ana_pot0.mod
+
+# Setup neighbor style
+neighbor        1.0 bin
+neigh_modify    every 1 check yes
+
+thermo          10000
+thermo_style custom vol lx ly lz xy xz yz pe press pxx pyy pzz pxy pxz pyz
+thermo_modify norm no
+
+min_style	    fire
+minimize 		1.0e-8 1.0e-8 100000 100000
+
+#write_restart	equil.rest
+
+
+# pure deformation Z 3
+#clear
+#read_restart    equil.rest
+#include         ana_pot0.mod
+#thermo          10000
+
+# Stress calculation
+comm_modify     cutoff 20
+compute         pas all stress/atom NULL
+variable        hydpa atom (c_pas[1]+c_pas[2]+c_pas[3])/3
+variable        devpa atom (c_pas[4]+c_pas[5]+c_pas[6])/3
+
+dump            2 all custom 1 shear.stress.lammpstrj id type radius x y z c_pas[1] c_pas[2] c_pas[3] c_pas[4] c_pas[5] c_pas[6] v_hydpa v_devpa
+dump_modify     2 append yes sort id
+run             0
+undump          2
+
+min_style       cg
+
+variable        d loop 100
+variable        a equal lz
+variable        b equal $a
+#variable       h equal yz
+#variable       l equal $h
+variable        g equal 0.001
+variable        n equal (1.0*$b*$g)
+
+variable        p equal 3
+label           loop3
+print           "Step = $d"
+variable        s equal ($d*$g)
+print           "Strain = $s"
+thermo_style    custom step v_p v_s vol lx ly lz xy xz yz pe press pxx pyy pzz pxy pxz pyz
+change_box      all z delta 0 $n remap units box
+dump            2 all custom 10000 shear.stress.lammpstrj id type radius x y z c_pas[1] c_pas[2] c_pas[3] c_pas[4] c_pas[5] c_pas[6] v_hydpa v_devpa
+dump_modify     2 append yes sort id
+fix             1 all box/relax x 0 y 0
+minimize        1.0e-8 1.0e-8 100000 100000
+unfix           1
+undump          2
+next            d
+jump            shear.in loop3
